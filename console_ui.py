@@ -44,14 +44,16 @@ class ui_component():
         self.defaultColorPair = defaultColorPair
         self.disabledColorPair = disabledColorPair
 
+        self.update_boudary_check(width, heigth)
         self._active = False
     
     def __new__(cls, comp, *args, **kwargs):
+        instance = super().__new__(cls)
         if cls.__base__ == ui_component:
             if not isinstance(comp, ui_component):
                 raise TypeError(f"First parameter for component has to be an instance of {ui_component}")
-            ui_component.__init__(cls, **dict(zip(ui_component.__init__.__code__.co_varnames[1:], comp.__dict__.values())))
-        return super().__new__(cls)
+            ui_component.__init__(instance, **dict(zip(ui_component.__init__.__code__.co_varnames[1:], comp.__dict__.values())))
+        return instance
     
     def _draw_default(self):
         pass
@@ -71,32 +73,52 @@ class ui_component():
         else:
             self._draw_disabled()
     
+    def update_boudary_check(self,
+                             width: int,
+                             heigth: int):
+        if heigth == 1:
+            self.check_bounds = self.is_at_coordinates_x
+        elif width == 1:
+            self.check_bounds = self.is_at_coordinates_y
+        else:
+            self.check_bounds = self.is_at_coordinates_xy
+        
+    def resize(self,
+               width: int,
+               heigth: int):
+        self.update_boudary_check(width, heigth)
+        
+        self.width = width
+        self.heigth = heigth
+
     def is_at_coordinates_xy(self,
                           x: int,
                           y: int) -> bool:
         return self.y >= y >= self.y + self.heigth and self.x <= x <= self.x + self.width
     
-    # For height == 1
+    
     def is_at_coordinates_x(self,
                           x: int,
                           y: int) -> bool:
+        "For height == 1"
         return y == self.y and self.x <= x <= self.x + self.width
     
-    # For width == 1
+
     def is_at_coordinates_y(self,
                           x: int,
                           y: int) -> bool:
+        "For width == 1"
         return self.y >= y >= self.y + self.heigth and x == self.x
     
     def click(self,
               x: int,
               y: int):
-        if self.is_at_coordinates_x(x, y):
+        if self.check_bounds(x, y):
             self._active = True
             return
         self._active = False
         
-class checkBox(ui_component):
+class Check_Box(ui_component):
     def __init__(self,
                  comp: ui_component,
                  label: str = "",) -> None:
@@ -125,13 +147,13 @@ class checkBox(ui_component):
     def click(self,
               x: int,
               y: int):
-        if self.is_at_coordinates_x(x, y):
+        if self.check_bounds(x, y):
             if self._active:
                 self._active = False
                 return
             self._active = True
 
-class stringField(ui_component):
+class Input_Box(ui_component):
     def __init__(self,
                  comp: ui_component,
                  default: str = None,
@@ -176,43 +198,65 @@ class stringField(ui_component):
             if c == 10:
                 self._active = False
 
+class App():
+    def __init__(self) -> None:
+        self.scr = curses.initscr()
 
-def console(screen: CursesWindowType):
-    curses.start_color()
-    curses.init_pair( 1, curses.COLOR_GREEN, curses.COLOR_BLACK)
-    curses.init_pair( 3, curses.COLOR_YELLOW, curses.COLOR_WHITE)
+        curses.savetty()
+        self.is_running = False
 
-    wInfo = curses.newwin(6, curses.COLS, 0, 0)
-    sInfo = stringField(ui_component(1, 0, 20, 1, wInfo, activeColorPair = 1), "Sus")
-    c_sus = checkBox(ui_component(1, 3, 20, 1, wInfo, activeColorPair = 1), "Impostor")
-    #curses.noecho()
-    curses.curs_set(0)
-    curses.cbreak()
-    screen.keypad(1)
-    curses.mousemask(1)
-    border = ord("|")
-    mouse = ""
-    while True:
-        c = screen.getch()
-        if c == curses.KEY_RESIZE:
-            rows, cols = screen.getmaxyx()
-            wInfo.resize(6, cols)
+        curses.curs_set(0)
+        curses.mousemask(1)
 
-        if c == curses.KEY_MOUSE:
-            _, mx, my, _, _ = curses.getmouse()
-            mouse = f"x:{mx} y:{my}\r"
-            sInfo.click(mx, my)
-            c_sus.click(mx, my)
+        # Turn off echoing of keys, and enter cbreak mode,
+        # where no buffering is performed on keyboard input
+        curses.noecho()
+        curses.cbreak()
 
-        wInfo.clear()
-        wInfo.border(border, border,
-                ord(" "), ord("_"),
-                border, border, border, border)
-        wInfo.addstr(1, 1, mouse)
-        wInfo.addstr(2, 1, f"key: {c}")
-        sInfo.writech(c)
-        sInfo.draw()
-        c_sus.draw()
-        wInfo.refresh()
+        # In keypad mode, escape sequences for special keys
+        # (like the cursor keys) will be interpreted and
+        # a special value like curses.KEY_LEFT will be returned
+        self.scr.keypad(1)
 
-curses.wrapper(console)
+        # Start color, too.  Harmless if the terminal doesn't have
+        # color; user can test with has_color() later on.  The try/catch
+        # works around a minor bit of over-conscientiousness in the curses
+        # module -- the error return from C start_color() is ignorable.
+        try:
+            curses.start_color()
+            curses.init_pair( 1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+            curses.init_pair( 3, curses.COLOR_YELLOW, curses.COLOR_WHITE)
+        except:
+            pass
+    
+    def __del__(self):
+        curses.resetty()
+        curses.endwin()
+
+    
+    def run(self):
+        self.is_running = True
+        self._loop()
+
+    def init_screen(self,
+                    scr: CursesWindowType):
+        curses.start_color()
+        curses.init_pair( 1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair( 3, curses.COLOR_YELLOW, curses.COLOR_WHITE)
+
+        curses.curs_set(0)
+        curses.cbreak()
+        curses.mousemask(1)
+
+        scr.keypad(1)
+        self.scr = scr
+
+    def update(self,
+               key: int):
+        pass
+
+    def _loop(self):
+        self.update(0)
+        while self.is_running:
+            c = self.scr.getch()
+            self.update(c)
